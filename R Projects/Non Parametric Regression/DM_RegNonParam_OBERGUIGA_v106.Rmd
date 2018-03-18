@@ -1,0 +1,512 @@
+---
+title: "Master Big Data DM RÃ©gression Non ParamÃ©trique"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+#### Nom et PrÃ©nom des Ã©tudiants du groupe :
+
+```
+- BERGUIGA Oussama 
+
+```
+
+
+#### Importation des données
+
+
+```{r} 
+getwd()
+setwd("C:/Users/oussa/Downloads/Data Science/Master Statistique Big Data Dauphine/Module 2/Regression non-paramétrique")
+list.files()
+data=read.table('DataReg')
+summary(data)
+plot(data$absc,data$ordo)
+```
+
+#### I) Exploration des propriete de g(x)
+ 
+*Estimateur non paramétrique de g*
+ 
+D'après le cours, un estimateur de g est donné par $\hat{g}_{n,h}(x)=L_n(K_h(x-.))=\frac{1}{n}*\sum_{i=0}^n(K_h(x_0-X_i))$ et $K_h(x_0-x)=\frac{1}{h}*K(\frac{x_0-x}{h})$ et K un noyau ie une fonction de $\mathbf{R}$ dans $\mathbf{R}$ telle que $\int_\mathbf{R}K(x)\,\mathrm{d}x=1$. Le noyau est d'ordrk si pour tout l entier entre 1 et k:  $\int_\mathbf{R}K(x)*x^{l}\,\mathrm{d}x=0$
+
+```{r}
+par(mfrow=c(2,2))
+v=c(0.001,0.005,0.01,0.05)
+for (i in 1:length(v))
+  
+{plot(density(data$absc,bw=v[i],kernel="gaussian"),main="")}
+
+```
+
+*Choix de differents noyaux et discussion de g=1, notamment aux bords de [0,1]*
+
+```{r}
+par(mfrow=c(2,2))
+v=c(0.001,0.005,0.01,0.05)
+for (i in 1:length(v))
+  
+{plot(density(data$absc,bw=v[i],kernel="triangular"),main="")}
+
+```
+
+```{r}
+par(mfrow=c(2,2))
+v=c(0.001,0.005,0.01,0.05)
+for (i in 1:length(v))
+  
+{plot(density(data$absc,bw=v[i],kernel="rectangular"),main="")}
+
+```
+
+A première vue il est plausible de penser que g est constante (égale à 1) sur [0,1],ce qui signifierait que la variable X suit une loi uniforme sur [0,1].Cependant, si on choisit un noyau "rectangular", on peut penser que la densité de g est une fonction affine sur les bords de [0,1].
+
+*Choix de la fenêtre optimal (noyau gaussien)*
+
+
+La fenêtre optimale est obtenue en minimisant un estimateur obtenu par validation croisée :
+$\hat{h}=\displaystyle\min_{h} \hat{J_h}$ avec $\hat{J_h}=\int_\mathbf{R} \hat{g}_{n,h}(x)\,\mathrm{d}x-2*\frac{1}{n}\sum_{i=1}^n\hat{g}_{(-i),n,h}(X_i)\ $
+
+```{r}
+#on peut utiliser la fonction bw.ucv ou dpik pour trouver la fenêtre minimale
+
+library(KernSmooth)
+
+dpik(data$absc)
+
+#library(stats)
+#bw.ucv(data$absc)
+
+#Remarque : la fonction bw.ucv du package "stats" donne un tout autre résultat
+
+```
+
+
+
+```{r}
+plot(density(data$absc,bw=dpik(data$absc),kernel="gaussian"),main="g density gaussian Kernel best bendwith choosen with cross validation")
+
+```
+
+Avec un noyau gaussien et une fenêtre optimal, on peut penser que g est la densité de la loi uniforme sur [0,1]
+
+*Test de l'hypothese g=1,ie loi uniforme*
+
+
+```{r}
+library(car)
+qqPlot(data$absc,distribution="unif")
+
+
+```
+D'après le QQplot, g colle parfaitement à la densité de la loi uniforme sur [0,1]
+
+
+*Question facultative*
+
+$c^{(k)}$ est le moment d'ordre k des $X_i$.D'après la loi des grands nombres, un estimateur $c_n^{(k)}$ de $c^{(k)}$ est :
+$\frac{1}{n}*\sum_{i=0}^n(K_h(x_0-X_i))$
+
+$\hat{c}_{n,k}(x)=\frac{1}{n}\sum_{i=1}^nX^k_i$
+
+
+#Construction d'un intervalle de confiance
+Posons $H_0$ : g est la densité de la loi uniforme
+D'après la loi des grands nombres, si l'hypothese de loi uniforme est juste,l'estimateur devrait converger vers $\frac{1}{k+1}$
+D'après le cours, $\sqrt{n}(L_n(\phi)-L(\phi))$ converge en loi vers une loi normale  d'esperance nulle et de variance($Var(\phi(x))$ 
+Ici $\phi(X)$=$X^k$ donc comme sous $H_0$ X suit la loi uniforme,on utilise la formule de l'esperance d'une transformée de variable pour trouver : 
+$Var(\phi(x))={\mathbb{E}}(X^{2k})-{\mathbb{E}}(X^k)^2=\frac{1}{(2*k+1)}-\frac{1}{(k+1)^2}=\frac{k^2}{(2*k+1)*(k+1)^2)}$
+
+
+
+#Intervalle de confiance pour une loi gaussienne :
+$\mu$ l'espérance et $\sigma^2$ la variance
+$\mu$ appartient à l'intervalle $[X_n-q_\alpha*\frac{\sigma}{\sqrt{n}},X_n+q_\alpha*\frac{\sigma}{\sqrt{n}}]$
+au risque $\alpha$
+
+
+```{r}
+
+#on calcul l'estimateur sur les 10^5 valeurs de X
+
+n=1e5
+
+c_k=function(k){
+return (1/n*sum((data$absc)^k))
+
+}
+
+c_k(4)
+
+#Application
+
+
+intervalle_confiance=function(n,k){
+v=c(0,0)
+
+
+#quantile 99% d'une gaussienne
+q_99=qnorm(0.995)
+
+sigma_k=sqrt(k^2/(((2*k+1)*(k+1)^2)))
+
+mu_k=1/(k+1)
+
+v[1]=mu_k-q_99*sigma_k/sqrt(n)
+v[2]=mu_k+q_99*sigma_k/sqrt(n)
+  return(v)
+}
+
+
+
+
+
+
+#on genere un vecteur v de p entiers uniformement tires sur [1,m], et on teste pour tout element k apparenant à v si c_k,n appartient à l'intervalle de confiance 
+test=function(m,p){
+t=0
+  
+v=round(runif(p,1,m))
+    
+for (j in v)
+    
+    {
+
+      
+if (c_k(j)>=(intervalle_confiance(n,j)[1]) & c_k(j)<=(intervalle_confiance(n,j)[2]))
+    
+    {t=t+1}
+
+  }
+return(t/p)
+ 
+  }
+
+test(1e10,1e4)
+
+```
+
+
+Conclusion : on a de fortes présomptions de penser que g est la densité de la loi uniforme sur [0,1]
+
+
+
+#### II) Recondstruction de r(x)
+
+*Construction estimateur de Nadariya Watson*
+
+Estimateur de Nariya Watson est donné par : 
+$\widehat{r}_{n,h}(x_0)=\frac{\sum_{i=1}^n K_h(x_0-x_i) y_i}{\sum_{i=1}^nK_h(x_0-x_i)}$
+
+```{r}
+library(KernSmooth)
+par(mfrow=c(2,2))
+v=c(0.001,0.005,0.01,0.05)
+for (i in 1:length(v))
+  
+  
+{plot(data$absc,data$ordo)
+  lines(locpoly(data$absc,data$ord,bandwidth=v[i]),main="",type='l',col='blue')}
+
+
+```
+
+*Inconvénients sur h*
+
+h trop petit : sous-lissage, estimateur est très irrégulier reproduit simplement les observations
+h trop grand : sur-lissage, on se rapproche de l'esperance des Yi.
+
+Cependant, aura tendance à préférer un h petit (puisque dans la théorie h doit tendre vers 0) 
+
+
+```{r}
+h_opt=dpill(data$absc,data$ordo)
+print(h_opt)
+plot(data$absc,data$ordo)
+lines(locpoly(data$absc,data$ord,bandwidth=h_opt),main="",type='l',col='blue')
+
+```
+
+
+
+
+*Decoupage du jeu de données*
+
+```{r}
+data$test=data$absc>=(1/2)
+
+data_plus=data[data$test==TRUE,1:2]
+
+data_moins=data[data$test==FALSE,1:2]
+
+  
+h_opt1=dpill(data_moins$absc,data_moins$ordo)
+h_opt2=dpill(data_plus$absc,data_plus$ordo)
+
+print(c(h_opt1,h_opt2))
+
+#en bleu : 2 lissages sur les 2 intervalles avec deux fenetres optimales par intervalle
+
+#en vert 2 lissages sur les 2 intervalles avec hopt 
+
+#en rouge un lissage global avec hopt
+
+plot(locpoly(data_moins$absc,data_moins$ordo,bandwidth = h_opt1),col="blue",type='l',xlim=c(0,1))
+lines(locpoly(data_plus$absc,data_plus$ordo,bandwidth = h_opt2),col="blue",type='l')
+lines(locpoly(data$absc,data$ordo,bandwidth=h_opt),main="",col="red",type='l')
+
+lines(locpoly(data_moins$absc,data_moins$ordo,bandwidth = h_opt),col="green",type='l',xlim=c(0,1))
+lines(locpoly(data_plus$absc,data_plus$ordo,bandwidth = h_opt),col="green",type='l')
+legend("topleft", c("2 lissages sur les 2 intervalles avec deux fenetres optimales par intervalle","2 lissages sur les 2 intervalles avec hopt","un lissage global avec hopt"), col = c("blue","green","red"), lty = 1:3,cex=0.50)
+
+
+
+
+plot(locpoly(data_moins$absc,data_moins$ordo,bandwidth = h_opt1),col="blue",type='l',xlim=c(0.45,0.55),ylim=c(-0.6,0.6))
+lines(locpoly(data_plus$absc,data_plus$ordo,bandwidth = h_opt2),col="blue",type='l')
+lines(locpoly(data$absc,data$ordo,bandwidth=h_opt),main="",col="red",type='l')
+
+lines(locpoly(data_moins$absc,data_moins$ordo,bandwidth = h_opt),col="green",type='l')
+lines(locpoly(data_plus$absc,data_plus$ordo,bandwidth = h_opt),col="green",type='l')
+
+legend("topleft", c("2 lissages sur les 2 intervalles avec deux fenetres optimales par intervalle","2 lissages sur les 2 intervalles avec hopt","un lissage global avec hopt"), col = c("blue","green","red"), lty = 1:3,cex=0.50)
+
+
+```
+
+On peut tirer 2 enseignements des ces graphiques :
+
+- le choix de la fenêtre optimale est lié à la variation de la fonction sur un intervalle donné : on remarque que les 2 fenêtres sont très différentes (du simple au double). En effet la variation des $Y_i$ (et donc de $r(x)$) est bien plus importante sur l'intervalle [0,0.5] que sur l'intervalle [0.5,1]
+
+- la regression au bord d'un intervalle peut être faussée par manque d'information : cf ici la regression au point Xi=0.5.Le lissage au point 0.5 est plus juste dans le cas du lissage de r sur [0,1] car on dispose de 2 fois plus d'informations sur le comportement des $Y_i$ au voisinage de 0.5 que dans le cas de 2 lissages séparés [0,0.5] et [0.5,1]
+
+#### III) Etude de la loi des ####  
+$\xi_i$
+
+
+
+
+
+> REMARQUE:  dans cettte partie je considere les X_i NON DETERMINISTES  donc d'après la relation Y=r(X)+\xi,et par independance de x et \xi (donc r(X) et \xi) : Var(Y)=Var (r(X))+ sigma² 
+
+
+
+
+*Implementation *
+
+
+
+```{r}
+
+
+sigma_hat=function(y,n)
+
+{
+ 
+   return (1/(2*(n-1))*sum(diff(y)[1:(n-1)]^2))
+}
+
+n=1e5
+sigma_hat(data$ordo,n)
+
+```
+
+*Justification *
+
+```{r}
+
+var(data$ordo)
+abs(sigma_hat(data$ordo,n)-var(data$ordo))/var(data$ordo)#0.5% d'erreur relative
+
+```
+
+
+On pose $Z_i=\frac{(Y_{i+1}-Y_{i})²}{2}$, alors d'après le TCL l'estimateur de Rice converge vers l'esperance de Zi. Or ${\mathbb{E}}(Z_i)$=
+$\frac{1}{2} *{\mathbb{E}((Y_i-Y_{i+1})^2)}$ = 
+$\frac{1}{2}*{\mathbb{E}(Y_i^2+Y_{i+1}^2-2*Yi*Y_{i+1})}$=
+$\frac{1}{2} *{\mathbb{E}(Y_i^2)+\mathbb{E}(Y_{i+1}^2)-2*\mathbb{E}(Y_i)\mathbb{E}(Y_i+1))}$ car $Y_i$ et $Y_{i+1}$ sont independants or : 
+
+${\mathbb{E}(Yi^2)}$=${\mathbb{E}(Y_{i+1}^2)}$  et ${\mathbb{E}(Yi)}$=${\mathbb{E}(Y_{i+1})}$
+
+donc ${\mathbb{E}(Zi)}$=$1/2*(2*({\mathbb{E}(Yi^2)}-{\mathbb{E}(Yi)^2)})$ = $Var(Y_i)$
+
+L'estimateur de Rice $\hat{\sigma}_n^2$ est donc un estimateur sans biais de la variance des $Y_i$.
+Remarque : lien entre la variance de $Y_i$ et celle de $\xi_i$ :
+$Var(Y_i)$=$Var(r(X_i))$+$\sigma²$ par indépendance de $\xi_i$ et $X_i$
+
+*Précision de l'estimateur *
+
+```{r}
+
+plot(1/(2*(1:(n-1)))*cumsum(diff(data$ordo)^2),xlim=c(1,1e5),ylim=c(2,3.2),type='l')
+
+abline(h=var(data$ordo),col="red")
+
+```
+
+Le biais de l'estimateur est nul. 
+Concernant la variance: d'après le TCL on peut construire un intervalle de confiance pour ${\mathbb{E}}(Z_i)$= $Var(Y_i)$ de la forme (au risque $\alpha$) :
+
+
+
+
+
+$[\hat{\sigma}_n^2-q_\alpha*\frac{s}{\sqrt{n}},\hat{\sigma}_n^2+q_\alpha*\frac{s}{\sqrt{n}}]$
+avec s=$\sqrt{Var(Z_i)}$
+
+
+```{r}
+min(data$ordo)
+max(data$ordo)
+```
+
+
+
+or $Var(Zi)$=$Var(\frac{1}{2}*(Y_{i+1}-Y_{i})^2)$=$\frac{1}{4}*Var((Yi+1-Yi)^2)<=\frac{1}{4}{\mathbb{E}((Y_{i+1}-Y_i)^2)}$ or comme Yi appartient à [-10,10] (cf ci-dessus), $|Y_{i+1}-Y_i|$ inférieur à 20 donc $Var(Z_i)$ inferieur $\frac{1}{4}*20²=100$ donc s inférieur à 10.
+
+
+
+```{r}
+#application
+
+
+q_99=qnorm(0.995)
+majorant_s=10
+
+
+intervalle=c(sigma_hat(data$ordo,n)-q_99*majorant_s/sqrt(n),sigma_hat(data$ordo,n)+q_99*majorant_s/sqrt(n))
+print(min(intervalle))
+print(max(intervalle))
+
+print(var(data$ordo))
+
+print(var(data$ordo)>=min(intervalle) & var(data$ordo)<=max(intervalle))
+           
+             
+```
+
+*Distribution de * $\tilde{Y_i}$
+
+
+```{r}
+
+#par(mfrow=c(2,1))
+
+J_moins=data[1:5e4,]
+
+J_plus=data[(5e4+1):1e5,]
+
+
+plot(J_moins$absc,J_moins$ordo)
+
+plot(J_plus$absc,J_plus$ordo)
+
+?ksmooth
+
+#on utilise la fonction ksmooth qui permet de faire des predictions
+r_moins=ksmooth(x=J_moins$absc,y=J_moins$ordo,bandwidth=h_opt)
+predict_r_moins=ksmooth(x=J_moins$absc,y=J_moins$ordo,bandwidth=h_opt,n.points=length(J_plus$absc)
+                        ,x.points=J_plus$absc)
+
+
+plot(r_moins,col="red",type="l",xlim=c(0,1))
+lines(predict_r_moins,col="blue",type="l")
+
+#les deux distributions semblent être extremement proches
+#r_moins$y[1:100]-predict_r_moins$y[1:100]
+
+
+#normalement la distribution de Y_tild devrait être celle de Xsi_i_plus
+#Attention dans l'operation a ne pas oublier de trier les valeurs par X croissant dans J_plus car ksmooth retourne des valeurs de (x,y) avec x croissant or les Xi sont aléatoires et uniformes donc desordonnes !
+
+J_plus$Y_tild=J_plus[order(J_plus$absc),'ordo']-predict_r_moins$y
+
+#str(predict_r_moins$y)
+plot(J_plus$Y_tild)
+mean(J_plus$Y_tild)
+var(J_plus$Y_tild)
+
+#generons egalement les Xsi_moins
+r_plus=ksmooth(x=J_plus$absc,y=J_plus$ordo,bandwidth=h_opt)
+predict_r_plus=ksmooth(x=J_plus$absc,y=J_plus$ordo,bandwidth=h_opt,n.points=length(J_moins$absc),x.points=J_moins$absc)
+
+J_moins$Y_tild=J_moins[order(J_moins$absc),"ordo"]-predict_r_plus$y
+plot(J_moins$Y_tild)
+mean(J_moins$Y_tild)
+var(J_moins$Y_tild)
+mean(c(J_moins$Y_tild,J_plus$Y_tild))
+var(c(J_moins$Y_tild,J_plus$Y_tild))
+
+```
+
+Les distributions de $\tilde{Y_i}$ devrait approximativement être celle de $\xi_i$
+
+
+*Estimation de *
+
+$\mu(x)$
+
+pour reconstituer $\mu(x)$, on utilise le lissage par noyau pour une densite comme pour la densite g(x)
+
+```{r}
+
+#ajoutons les Xsi_plus et Xsi_moins pour avoir plus de points
+Xsi_i=c(J_moins$Y_tild,J_plus$Y_tild)
+mean(Xsi_i)#environ 0
+var(Xsi_i)#1.44
+
+
+#on peut utiliser l'estimateur de Rice pour estimer sigma² :
+sigma_hat(J_moins$Y_tild,length(J_moins$Y_tild))
+plot(density(Xsi_i),type='l')
+plot(Xsi_i)
+```
+
+A première vue la densité ressemble à une gaussienne centrée en 0.
+
+
+Remarque : sigma² vaudrait donc 1.44. Or si on considere les Xi non deterministes mais d'après la relation Y=r(X)+\#xi,et par independance de x et \xi (donc r(X) et \xi) : Var(Y)=Var (r(X))+ sigma² donc 
+
+Var(r(X))=Var(Y)-sigma²
+
+```{r}
+Var_r_X=var(data$ordo)-var(Xsi_i)
+Var_r_X#1.13
+```
+
+
+
+
+*question sur la gaussianité*
+
+#qqplot
+#test de gaussianité 
+
+```{r}
+#la densite dessinee a la question precedente  
+
+qqnorm(Xsi_i)
+qqline(Xsi_i,col=2)
+
+
+
+#Test de normalite pour les Xsi_i : on peut  utiliser un test de  Shapiro-Wulk 
+#Shapiro-Wulk test : 
+#Ho= la série statistique suit une distribution normale      
+#H1=la serie statistique ne suit pas une distribution gaussienne 
+
+?shapiro.test
+shapiro.test(sample(Xsi_i,5000))
+
+#p-value >> 5%, alors le test de  Shapiro  montre que les Xsi sont  gaussiens
+
+#Remarque :  test de Kolmogorov Smirnov : 
+#Ho : la distribution est Gaussienne
+#ks.test(Xsi_i,"pnorm")
+
+#p-value << 5 % on rejette Ho
+
+#Il semblerait donc qu'un test  rejette la gaussianite distribution ...bizzare..
+
+```
