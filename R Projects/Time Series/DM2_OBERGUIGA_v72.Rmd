@@ -1,0 +1,207 @@
+---
+title: "Money Market modeling with a random-coefficient linear model"
+ 
+output:
+  word_document: default
+  pdf_document: default
+---
+
+Universite Paris Dauphine
+Master Statistic and Big Data
+BERGUIGA Oussama
+ 
+
+#### Introduction
+
+In that problem, we are asked to find the time varying coefficients that better fit the following equation thanks to the Kalman filter algorithm :
+
+$DM1_t=\beta_0,t+\beta_1,t*OBL_{t-1}+\beta_2,t*INF_{t-1} +\beta_3,t*SUR_{t-1}+\beta_4*DM1_{t-1},t*+\zeta_t$ where :
+- $DM1_t$ is the log-ratio of US Money Supply
+- $OBL_t$ is  the increment of short term rates
+- $INF_t$ is the log ratio of american consumer price index
+- $SUR_t$ is the surplus or deficit of the  US federal government budget    
+ 
+#### 1. Data Importation
+
+
+```{r}
+
+setwd("C:\\Users\\oussa\\Downloads\\Data Science\\Master Statistique Big Data Dauphine\\Module 2\\Séries temporelles")
+
+data=read.csv("data_DM2.csv")
+data=data[-c(1),]#there is a missing value in the first row
+
+head(data)
+colnames(data)
+
+for (i in 2:ncol(data)){
+plot(data[,c(i)],main=colnames(data)[i],type='l')
+}
+
+```
+
+We can see an exponential tendancy on the Money Supply and the Consumer Price plots, which justifies the log-ratio operation
+
+#### 2. Density of the vectors $$\epsilon_t$$
+
+Let $S$ the variance matrix of $\epsilon_t$ (as we have homoscedasticity $S$ is constant)
+$S=\begin{bmatrix}\sigma_0² & 0 & 0& 0 & 0 \\0& \sigma_1² & 0 & 0& 0 \\0 & 0 & \sigma_2² & 0& 0\\0 & 0 & 0 &  \sigma_3² & 0\\0 & 0 & 0& 0&  \sigma_4² \end{bmatrix}$ $S ^{-1}=\begin{bmatrix}\sigma_0^{-2} & 0 & 0& 0& 0 \\0 & \sigma_1^{-2} & 0 & 0& 0 \\0 &0& \sigma_2^{-2} & 0& 0\\0 & 0 &0& \sigma_3^{-2} & 0\\0 & 0 & 0&0& \sigma_4^{-2} \end{bmatrix}$,
+$N=5$ and $\left|S\right|= \prod \sigma_i^{2}$
+
+Then, density of the $\epsilon_t$ is $f(x) = \frac {1} {(2\pi)^{N/2} \left|S\right|^{1/2}}\;\; e^{-\frac{1}{2} x ^\top S^{-1} x}$
+
+#### 3. Steps of the Kalman prediction algorithm
+
+In this problem, we are in a state-space model with random coefficients, and under the normal condition. According to the Kalman theorem, if we chose $\Sigma_{0}$ $\hat{\beta_{0}}$ well, we can compute the following algorithm recursively :
+$\hat{DM1_{n}}=\Pi_{n-1}(DM1_{n})$, $V^L_n=\mathbb{E}[(DM1_n-\hat{DM1_{n}})^2]=\sigma^2v^l_n$ the quadratic prediction error, $\Sigma_n=\mathbb{E}[(\beta_n-\hat{\beta_{n}})(\beta_n-\hat{\beta_{n}})^\top]$,$\hat{\beta_{n}}=\Pi_{n-1}(\beta_{n})$,$\eta_n$ a strong white noise, $H\eta_n=\epsilon_n$
+First we are asked to chose $\beta_0$ a random $\mathcal{N}(0,50*I_5)$
+Then we can compute the following recursion (simplified since $A_t=I_5$):
+$\hat{\beta_{n+1}}=\hat{\beta_{n}}+\frac{\Sigma_{n}B_n^\top}{V^L_n}*(DM1_n-\hat{DM1_{n}})$
+
+(This is a stochastic gradient algorithm starting from $\hat{\beta_0}$)
+Then $\hat{DM1_{n+1}}=\hat{\beta_{n+1}}^\top B_n^\top$, and $\Sigma_{n+1}=\Sigma_{n}+H_nH_n^\top-\frac{\Sigma_{n}*B_n^\top*B_n*\Sigma_{n}}{V^L_n}$
+At last : $V^L_{n+1}=B_n*\Sigma_{n+1}*B_n^\top+\sigma^2$
+
+
+#### 4. Likelyhood expression
+
+For calibrating the hyperparameter $\theta=(\sigma_\zeta,\sigma_0,...,\sigma_4)$, we can compute the likelihood contrast $L_t(\theta)$ 
+First we initilize $\theta_0,\hat{\beta_0}$ which follows a random $\mathcal{N}(0,50*I_5)$(The choice of the initialization is important for the algorithm convergence, it should correspond to the most likely fit on the observations),$\Sigma_0$ and $L_0$,then we compute the innovation $I_n(\theta)=DM1_n-\hat{DM1_{n}}$.
+Then we update de QLIK loss $L_n=L_{n-1}(\theta)+\frac{I_n^2(\theta)}{\sigma^2*v^L_n(\theta)}+log(\sigma^2*v^L_n(\theta))$
+Finally, we compute the next linear prediction  $\hat{DM1_{n+1}}(\theta)$ and the associated risk $v^L_{n+1}$
+Moreover we can estimate $\sigma^2$ with $\hat{\sigma_n^2}=\frac{1}{n}*\sum_{t=1}^{n} \frac{(DM1_t-\hat{DM1_t(\theta_n)})}{v^L_t}$
+
+#### 5. Implementation of the state-space model
+
+From the basic data we have to generate new features before implementing the state-space model : 
+```{r}
+
+colnames(data)
+
+DM1_t=100*diff(log(data$M1t..Monetary.Supply.))[-1]
+DM1_t_1=100*diff(log(data$M1t..Monetary.Supply.))[-(length(DM1_t)+1)]
+
+  
+
+OBL_t=diff(data$Ft..3.month.Tbill.)[-1]
+OBL_t_1=diff(data$Ft..3.month.Tbill.)[-(length(OBL_t)+1)]
+
+
+INF_t=100*diff(log(data$CPIt..Consumer.Price.))[-1]
+INF_t_1=100*diff(log(data$CPIt..Consumer.Price.))[-(length(INF_t)+1)]
+
+SUR_t=diff(data$SURt..Federal.Government.)[-1]
+SUR_t_1=diff(data$SURt..Federal.Government.)[-(length(SUR_t)+1)]
+
+
+Intercept=rep(1,length(DM1_t))#for Beta_o,t
+
+
+plot(DM1_t,type='l')
+plot(OBL_t,type='l')
+plot(INF_t,type='l')
+plot(SUR_t,type='l')
+
+
+library(KFAS)
+
+?fitSSM
+
+model=SSModel(DM1_t~SSMregression(~Intercept+OBL_t_1+INF_t_1+DM1_t_1+SUR_t_1,Q=diag(NA,5),a1 = c(0,0,0,0,0),P1=diag(50^2,5))-1,H=NA)#a1 and P1 for initialisation of beta_o with N(0,50I)
+
+
+
+```
+
+
+#### 6. Computation of the maximum Likelyhood estimator
+
+
+```{r}
+#calibration of the hyperparameter
+
+fit=fitSSM(model,inits=c(0.5,0.1,0.1,0.1,0.1,0.1),method="BFGS")
+
+model=fit$model
+
+```
+
+#### 7. Computation of beta and sigma
+
+The coefficients $\beta_{t/{t-1}}$ of the Kalman recursion are given by :
+```{r}
+#to get the Beta_hat:
+out=KFS(model)
+model$a1
+model$P1
+summary(out$alphahat)#summary of the Beta t/t-1
+print(out$alphahat[1:5,])
+out
+#diagonal terms on "out$P"" give us Sigma_t_t_1
+
+
+
+
+```
+
+The $\sigma^2$ of the Kalman recursion is given by :
+
+```{r}
+print(model$H)
+```
+
+The variances of the coefficients, which are the diagonal terms of $\Sigma_{t/{t-1}}$ matrix is given by
+
+```{r}
+print(model$Q)
+
+
+
+
+```
+
+
+We can see that the variance of the coefficients on the diagonal terms is very low,except perhaps for the "intercept".
+
+#### 8. Curves and prediction
+
+```{r}
+#plot of the Beta_t_t-1
+ts.plot(out$alphahat,col=1:5)
+
+legend("topleft", c("Intercept", "OBL_t_1", "INF_t_1","DM1_t_1","SUR_t_1"), col = 1:5, lty = 1:5,cex=0.65)
+
+#plot of the Sigma_t_t-1 diagonal coefficients
+
+M=matrix(0,40,5)
+#M
+#nrow(M)
+for (i in 1:40)
+{M[i,]=diag(out$P[,,i])}
+M
+plot(M[,1],main='variance of Intercept coefficient',type='l')
+plot(M[,2],main='variance of OBL_t_1 coefficient',type='l')
+plot(M[,3],main='variance of INF_t_1 coefficient',type='l')
+plot(M[,4],main='variance of DM1_t_1 coefficient',type='l')
+plot(M[,5],main='variance of SUR_t_1 coefficient',type='l')
+
+
+
+
+pred = predict(fit$model, interval = "conf", level = 0.95)
+plot(DM1_t,type='l')
+lines(pred[,1],col="green")
+lines(pred[,2],col="red")
+lines(pred[,3],col="red")
+legend("topleft", c("DM1_t","Conditionnal confidence interval","Predictions t_1"), col = c("black","red","green"), lty = 1:3,cex=0.65)
+summary(pred)
+```
+
+In the first plot, we can see that the coefficients of SUR_t_1 and DM1_t_1 are nearly equal to 0, the coefficient of INF_t_1 is slightly rising around 0.The coefficient of OBL_T_1 is varying between 0 and -1.
+At last, the Intercept coefficient $\beta_0,t$ (which can be interpreted as a deterministic trend ) varies a lot between 0 and 3.
+Moreover, we can see that the variances ( the diagonal terms of $\Sigma_{t/{t-1}}$) converge very quickly, before 10 steps of the algorithm.
+To conclude, In view of the last graph, we can say that prediction and the interval prediction fit very well to the DM1_t.
+
+
+
+
