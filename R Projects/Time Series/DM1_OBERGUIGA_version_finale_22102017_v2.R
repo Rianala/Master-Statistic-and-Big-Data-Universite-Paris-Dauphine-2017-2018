@@ -315,10 +315,13 @@ Box.test(ARMA_5$residuals,type='Ljung')
 
 mean(ARMA_5$residuals)#OK
 
-acf(ARMA_5$residuals)#residuals seem uncorrelated
 
 
+par(mfrow=c(2,1))
 plot(ARMA_5$residuals,ylim=c(-5,5))
+acf(ARMA_5$residuals,main="")#residuals seem uncorrelated
+
+
 #based on the plot, it seems that the variance is increasing ...
 #since the variance is not constant, it cannot be a white noise
 
@@ -330,14 +333,13 @@ Box.test(ARMA_5$residuals,type='Ljung')
 
 #p-value = 0.75 >> 5 %
 
-#but the power of the Box.test is not so strong..
 
 #let's try another test
 
 ?turning.point.test
 
 #Turning Point Test : 
-#Ho= the residuals are independant 
+#Ho= the residuals are not correlated 
 #H1=the residuals are correlated
 
 turning.point.test(ARMA_5$residuals,alternative="two.sided")
@@ -348,30 +350,37 @@ turning.point.test(ARMA_5$residuals,alternative="two.sided")
 #there is no homoscedasticity 
 
 #is it gaussian ?
-#Test for normality of the residuals : we can use a Shapiro-Wulk test
-#Shapiro-Wulk test : Ho= the statistical serie follow a normal distribution     
-#H1=the statistical serie does not follow a normal distribution
-
-
-shapiro.test(ARMA_5$residuals)
-
-#p-value << 5%, so shapiro test shows that it is NOT gaussian
 
 
 qqnorm(ARMA_5$residuals)
 qqline(ARMA_5$residuals,col=2)
 
 
+#the qqplot fits well only for the theoretical Quantiles between -1 and 1
+
+
+
+
+#Test for normality of the residuals : we can use a Shapiro-Wulk test
+#Shapiro-Wulk test : 
+#Ho= the statistical serie follow a normal distribution     
+#H1=the statistical serie does not follow a normal distribution
+
+?shapiro.test
+shapiro.test(ARMA_5$residuals)
+
+#p-value =2.5e-15 << 5%, so shapiro test shows that it is NOT gaussian
+
 
 
 #on the basis of the Shapiro test and the qqplot, 
 #we can conclude that the residuals of the ARMA(3,2) model 
-#are uncorreletad,their mean is zero, but they are not gaussian
+#are uncorreleted,their mean is zero, but they are not gaussian
 #moreover, since the variance seems to be not constant,
 #the residuals cannot be a white noise
 #the ARMA model may not be the best thing to do here
 #we will probably see in the next course 
-#that the GARCH models have been discovered by Robert Engle in 1982
+#that the GARCH model has been discovered by Robert Engle in 1982
 #(he got the Economic Nobel Prize in 2003 for that) to treat 
 #financial time series  
 #whose variance evolves with time 
