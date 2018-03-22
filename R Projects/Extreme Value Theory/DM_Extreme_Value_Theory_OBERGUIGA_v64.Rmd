@@ -1,0 +1,571 @@
+---
+title: "TP Introduction To Extreme Value Theory"
+author: BERGUIGA Oussama
+date : March 22,2018
+output:
+
+  html_document:
+    toc: true
+    number_sections: true
+---
+
+
+
+
+# Introduction
+The main purpose of that project is to use main results of the Extreme Value Theory on different data sets (portpirie, dow jones and glass)
+
+
+## Packages loading 
+
+```{r}
+setwd('C:\\Users\\oussa\\Downloads\\Data Science\\Master Statistique Big Data Dauphine\\Module 2\\Valeurs Extremes')
+library(evir)
+library(ismev)
+library(fitdistrplus)
+library(fExtremes)
+
+```
+# Study of PORTPIRIE Data Set
+
+
+In that dataset we find annual maximum sea levels recorded at Port Pirie, in South Australia
+```{r}
+data(portpirie)
+?portpirie
+
+
+```
+
+## Descriptive Statistics
+
+```{r}
+
+nrow(portpirie)
+
+summary(portpirie$SeaLevel)
+
+plot(portpirie,type="l",col="steelblue")
+
+grid()
+
+hist(portpirie$SeaLevel)
+
+plot(sort(portpirie$SeaLevel),(1:length(portpirie$SeaLevel))
+     /length(portpirie$SeaLevel))
+
+
+
+
+```
+
+Most of the sea levels maximum are around 4 meters, the maximum of the maximums is around 4.7 meters
+
+
+## Choice of modelisation
+
+
+Let us try a GEV model for the portpirie case
+
+
+## Choice of the blocs 
+
+
+
+We already have the annual maximum of porpotries SeaLevel,here we have no choice, so it is annual blocks, which is a good pragmatic option.
+
+
+
+## Estimation of the parameters
+
+First we try a gevfit
+
+```{r}
+
+fitmle_gev_portpirie1=gevFit(portpirie$SeaLevel,type="mle",block=1)
+
+fitmle_gev_portpirie1
+
+#gamma=-0.05 b=3.87 a = 0.2
+
+#Weibull attraction domain
+```
+
+
+```{r}
+fitmle_gev_portpirie2=gev.fit(portpirie$SeaLevel)
+
+fitmle_gev_portpirie2
+
+# b = 3.87474692  a = 0.19804120 gamma = -0.05008773
+
+
+#95% confidence intervalfor gamma: 
+
+IC=c(-0.05008773-0.09825633*2/sqrt(65),-0.05008773+0.09825633*2/sqrt(65))
+IC
+
+#0 does not seem to be part of the confidence interval
+
+
+```
+
+Let us try the probability weigthed moments method (better if we do not have enough data)
+
+```{r}
+
+fitpwrgev_portprie = gevFit(portpirie$SeaLevel,type="pwm")
+fitpwrgev_portprie
+#results are clothes to those with Maximum Likelihood Estimator  
+
+```
+
+
+Let us try a Gumbel modelisation
+
+```{r}
+fitmle_gumbel_portpirie1=gumbelFit(portpirie$SeaLevel,type=c("mle"))
+
+fitmle_gumbel_portpirie1
+
+```
+
+
+```{r}
+fitmle_gumbel_portpirie2=gum.fit(portpirie$SeaLevel,type=c("pwm"))
+
+fitmle_gumbel_portpirie2
+
+
+
+# b = 3.8694426  a = 0.1948867 
+```
+
+
+
+
+
+
+
+
+
+## Probability ,Quantile and return level plots interpretation
+
+
+```{r}
+
+gev.diag(fitmle_gev_portpirie2)
+
+```
+
+```{r}
+gum.diag((fitmle_gumbel_portpirie2))
+
+
+```
+
+
+
+In view of the QQplots and the Probability plots, it seems that both Gumbel and Weibull modelisation are a good fit. But we can notice that the confidence interval for the return level plot is better for the Gumbel fit than for the Weibull model.Moreover with Gumbel we have less parameters, then with that parcimony principle, I prefer to choose Gumbel modelisation.
+
+Moreover the Gumbel return Level plot is a linear function which is consistent with what we saw in the lesson.
+
+
+
+## Maximum domain of attraction
+
+
+
+The maximum domain of attraction is Gumbel with gamma =0
+
+
+
+## Estimation of a return level corresponding to a return period 100 and 1000 or endpoint
+
+```{r}
+
+xi=0
+mu=3.8694924
+beta= 0.1948879 
+
+
+#model Gumbel
+#return level plot
+
+
+fExtremes::qgev(1/100,xi=0,mu=mu,beta=beta,lower.tail=FALSE)
+#maximum sea level for the next 100 years : 4.77 meters
+
+fExtremes::qgev(1/1000,xi=xi,mu=mu,beta=beta,lower.tail=FALSE)
+#maximum sea level for the next 1000 years : 5.22 meters
+
+
+
+
+
+
+
+```
+
+
+
+## Small conclusion
+
+With a Gumbel model we could estimate that the maximum sea level of Port Pirie in a 100 and 1000 years are respectively around 4.77 and 5.22 meters,with a good confidence interval.It means that once every 100 years (respectively 1000 years) the PortPirie Sea Level annual maximum is above 4.77 meters (respectively 5.22 meters). Those results are consistent with the data since the maximum level in the past data is 4.69 meters.
+
+
+# Study of DowJones DataSet
+
+
+## Descriptive Statistics
+
+In the  DowJones dataset there are daily closing prices of the Dow Jones Index over the period 1996 to 2000
+
+```{r}
+
+data(dowjones)
+?dowjones
+
+
+log_ratio=100*diff(log(dowjones$Index))[-1]
+
+plot(log_ratio,type="l")
+abline(h=1.25,col='red')#we will see later that the red line corresponds to a fixed optimal threshold of 1.25 "log-$"
+summary(log_ratio)
+
+```
+The log ratios are between -7.5 and 4.9 with a mean and a median around 0.06
+
+Here we have daily data let us try a GPD model
+
+
+## Choice of the thresholds
+
+POT Method:
+We need the threshold to be close enough to the maximum (Pickand's theorem) but not too close (variance bias balance).
+
+```{r}
+
+findthresh(log_ratio,c(1,10,100))
+mrl.plot(log_ratio)
+```
+
+
+The Mean Excess has to be linear with u at levels of u for which the Generalized Pareto model is appropriate.
+Based on the previous graphics, we can see that the linear tendancy ends for u between 0 and 2.
+Let us look for the confidence interval for   $\sigma$ (scale) and $\gamma$ (shape) :
+
+```{r}
+?gpd.fitrange
+gpd.fitrange(log_ratio,0,2)
+
+```
+
+Thanks to that graphical method, it seems that 1.25 is a good threshold (we have a constant shape around 0 and the length of  confidence intervals are low)
+
+
+```{r}
+
+threshold=1.25
+log_ratio_excess=log_ratio[log_ratio>threshold]
+log_ratio_excess
+
+length(log_ratio_excess)/length(log_ratio)
+#10 % of the data are above the excess
+
+
+```
+
+## Estimation of the parameters
+
+First we can use the probably weighted moment method
+
+```{r}
+
+
+gpdfit3=gpdFit(log_ratio,u=threshold,type="pwm")
+gpdfit3
+#gamma=0.07405389 sigma=0.57480697
+
+```
+
+But as we have a lot of data here we can prefere the MLE method
+
+```{r}
+gpdfit1=gpd.fit(log_ratio,threshold)
+
+```
+
+
+
+```{r}
+gpdfit2=gpdFit(log_ratio,u=threshold,type="mle")
+gpdfit2
+
+
+```
+
+
+
+
+
+## Maximum domain of attraction
+
+
+Since gamma is approximatively equal to 0.087 > 0 this corresponds to a Frechet domain of attraction in the GEV theory. Then the distribution of excesses has no upper limit
+
+
+```{r}
+
+gamma=0.08680205
+sigma=0.56688864
+
+
+
+```
+
+## Probability, Quantile and Return level plots and interpretation
+
+```{r}
+gpd.diag(gpdfit1)
+
+
+
+```
+
+
+The probability plot is very good
+
+The confidence interval in the return level plot seems to be good until T=1e1. Yet we have some few points  out of the Quantile Plot (in the tail of the distribution)
+Moreover since gamma > 0 we can see convexity in the Return Level Plot
+
+
+## Estimation of a return level corresponding to a return period 100 and 1000 or endpoint
+
+
+```{r}
+#1304 data from 1996 to 2000 means :
+1304/5
+#261 datas a year
+
+?gpdTailPlot
+tail.mle=gpdTailPlot(gpdfit2)
+gpdRiskMeasures(gpdfit2,p=1-1/(100*1304/5))# 7.65
+gpdRiskMeasures(gpdfit2,p=1-1/(1000*1304/5))# 10.51
+gpdQPlot(tail.mle,p=1-1/(100*1304/5),ci=0.95)
+gpdQPlot(tail.mle,p=1-1/(1000*1304/5),ci=0.95)
+```
+
+
+
+## Small conclusion
+
+
+The maximum Dow Jones log ratio excess in the data base was : 4.86-1.25=3.61
+To conclude, thanks to the GPD theory, we could modelise with a fixed threshold of 1.25 "log-$" that the log ratio of dow jones , and that the return level for the excess of respectively 100 and 1000 days are 7.65  and 10.51.This corresponds to the quantile of a 0.9999617 probability (respectively 0.9999962)
+It means that once every 100 (respectively 1000) days, the log ratio excess above the threshold is higher than 7.65 (respectively 10.51). And when that excess is above those maximums, the mean of those excess is (shortfall) around 8.88 (respectively 12.01)
+But the confidence interval for that prediction (in view of the return level plot) is large..
+
+
+
+
+
+
+
+
+
+# Study of Glass DataSet
+
+The glass dataset contains breaking strength of 63 glass fibres of length 1.5 centimeters
+
+```{r}
+?glass
+data(glass)
+summary(glass)
+
+```
+Here we want to study the minimum strength to break the glass.Let X1,X2,..Xn be the strengths, then the minimum of the serie is - (the maximum of (-X1,...,-Xn)
+
+## Descriptive Statistics
+
+```{r}
+moins_glass=(-1)*(glass)
+
+
+
+
+nrow(moins_glass)
+
+summary(moins_glass)
+
+plot(moins_glass,type="l",col="steelblue")
+
+grid()
+
+hist(moins_glass)
+
+plot(sort(moins_glass),(1:length(moins_glass))
+     /length(moins_glass))
+#most of the maximums are between -1.5 and -2
+
+```
+
+
+## Choice of modelisation
+
+Let us try a GEV model for the glass breaking strengths dataset
+
+
+## Choice of the blocs 
+
+
+
+We can consider that the data glass is the minimums of a lot of trials then we can consider the blocks = 1.
+
+## Estimation of the parameters
+
+```{r}
+
+fitmle_gev_glass1=gevFit(moins_glass,type="mle",block=1)
+
+fitmle_gev_glass1
+
+#         gamma     b        a 
+#-0.08435813 -1.64162098  0.27287140
+
+#Weibull attraction domain
+```
+
+
+
+```{r}
+fitmle_gev_glass2=gev.fit(moins_glass)
+
+fitmle_gev_glass2
+
+#b=-1.6416229  a=0.2728611 gamma=-0.0843667
+
+
+
+#95% confidence intervalfor gamma: 
+
+IC=c(-0.0843667-0.06994369*2/sqrt(63),-0.0843667+0.06994369*2/sqrt(63))
+IC
+
+#0 does not seem to be part of the confidence interval
+
+
+```
+
+
+
+
+Let us try the probability weigthed moments method (better if we do not have enough data)
+```{r}
+
+fitpwrgev_glass = gevFit(moins_glass,type="pwm")
+fitpwrgev_glass
+#results are clothes to those with Maximum Likelihood Estimator  
+
+```
+
+Note : X is positive (it is a force in Newton), -X<0 
+
+'''
+
+```{r}
+#fitmle_gumbel_glass1=gumbelFit(moins_glass,type=c("mle"))
+
+#fitmle_gumbel_glass1#this one does not work here, I stay with the Weibull model
+
+```
+'''
+
+
+
+
+## Probability, Quantile and Return level plots and interpretation
+
+
+```{r}
+
+gev.diag(fitmle_gev_glass2)
+
+```
+
+
+The probability plot is good
+
+The confidence interval in the return level plot seems to be good until T=1e2. Yet we have some few points  out of the Quantile Plot (in the tail of the distribution)
+Moreover since gamma < 0 we can see concavity in the Return Level Plot
+
+
+## Maximum domain of attraction
+
+
+
+The maximum domain of attraction Weibull with gamma<0
+
+
+
+
+## Estimation of a return level corresponding to a return period 100 and 1000 or endpoint
+
+```{r}
+
+
+#model Weibull
+#Estimated Parameters:
+
+#         xi          mu        beta 
+        
+#-0.08435813 -1.64162098  0.27287140 
+
+gamma=-0.0843667
+b=-1.6416229
+a=0.2728611
+xf=b-a/gamma
+xf#here xf is >0 so it does not make sense since X=-strenght is always negative
+
+xi=gamma
+mu=b
+beta=a
+
+
+
+
+#Estimated Parameters:
+
+
+#b-1.6416229  a0.2728611 gamma-0.0843667
+
+
+
+
+#return level
+
+
+fExtremes::qgev(1/100,xi=xi,mu=mu,beta=beta,lower.tail=FALSE)
+#minimum strength to break the glass after 100 test  : 0.60 N
+
+fExtremes::qgev(1/1000,xi=xi,mu=mu,beta=beta,lower.tail=FALSE)
+#minimum strength to break the glass after 1000 test  : 0.21 N 
+
+
+
+
+```
+
+```{r}
+gevrlevelPlot(fitmle_gev_glass1,kBlocks = 100,  ci = c(0.90, 0.95, 0.99))
+gevrlevelPlot(fitmle_gev_glass1,kBlocks = 1000,  ci = c(0.90, 0.95, 0.99))
+
+```
+
+
+## Small conclusion
+
+With a Weibull model we could estimate that the minimum strength once every 100 and 1000 breaking tests are respectively around 0.6 and 0.2 Newtons.Those results are consistent with the data since the minimum strength to break the glass was 0.55 Newtons.Yet the confidence interval is not good( for exemple for the 100 trials, the minimum strength confidence interval is [0,3;0,8]).Perhaps the problem here is that we do not have enough data (only 63 observations).
+
+
+
