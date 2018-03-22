@@ -1,12 +1,8 @@
 ---
 title: "TP Introduction To Extreme Value Theory"
-author: BERGUIGA Oussama
-date : March 22,2018
-output:
-
-  html_document:
-    toc: true
-    number_sections: true
+author: "BERGUIGA Oussama"
+date: "March 22,2018"
+output : word_document
 ---
 
 
