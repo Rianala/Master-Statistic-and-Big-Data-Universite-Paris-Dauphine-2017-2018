@@ -1,0 +1,849 @@
+---
+title: "DM Statistique Bayesienne"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+#### Nom et PrÃ©nom des Ã©tudiants du groupe :
+
+```
+- BERGUIGA Oussama 
+
+```
+
+#### Importation des donnees
+
+
+
+
+
+
+```{r}
+
+
+setwd("C:\\Users\\oussa\\Downloads\\Data Science\\Master Statistique Big Data Dauphine\\Module 2\\Statistique Bayesienne")
+list.files()
+data=read.csv("mutations2.csv")
+require(zoo)#pour la verification de la convergence et du melange
+
+```
+
+
+#### I)Regression Lineaire
+
+*1)Regression Lineaire Bayesienne*
+
+
+
+
+Pour faire la regression lineaire bayesienne, on choisit une loi à priori de Zellner :
+
+![](prior.png)
+
+
+
+Cette loi est conjuguée la loi à posteriori est : 
+![](posteriori zellner.GIF)
+
+et marginalement, on a une loi de Student :
+![](zellner marginal posterior.GIF)
+
+le parametre g s'interprete comme la quantite d'information disponible dans la loi a priori par rapport à l'echantillon. g est donc l'inverse de la proportion de l'echantillon equivalente au poids de la loi a priori
+
+```{r}
+reg_lin_bayes=function(df){
+
+y=df[,6]
+X=as.matrix(df[,7:(ncol(df))])
+n=length(y)
+
+
+#Interpretation de g
+g=c(1,10,50,nrow(df))
+
+betahat=lm(y~X)$coefficients
+#str(betahat)
+residuals=lm(y~X)$residuals
+s2=t(residuals)%*%residuals
+
+#nrow(betahat)
+for (j in 1:length(betahat)){
+  
+cat(substring(names(betahat)[j],2),":")
+print(betahat[j]*g/(g+1))
+}
+#print(names(betahat))
+X=cbind(1,X)
+
+
+
+# esperance de sigma^2
+a=n/2
+b=s2/2+1/(2*g+2)*((t(betahat)%*%t(X))%*%(X%*%betahat))
+
+sigma_carre=b/(a-1)
+cat("variance:",sigma_carre)
+
+
+
+}
+```
+
+
+
+
+Remarque : on peut également faire de la regression lineaire bayesienne avec le package MCMC(regression lineaire avec une loi a priori de Zellner, generation des coefficients lineaires par algortihme de Gibbs):
+
+```{r}
+
+library(MCMCpack)
+model_bayes=MCMCregress(Barre~.,data=data[,6:ncol(data)])
+summary(model_bayes)
+par(mfrow=c(4,2))
+par(mar = rep(2, 4))
+plot(model_bayes)
+raftery.diag(model_bayes)
+```
+
+
+
+
+*2) Choix de modele*
+
+```{r}
+#*Choix de modele*
+
+
+
+#option 1 : on utlise l'algorithme de Gibbs vu en TD
+
+#fonction pour la log marginal likelyhood
+marglkd=function(df,gamma){
+y=df[,6]
+X=as.matrix(df[,7:(ncol(df))])
+X=cbind(1,X)
+n=length(y)
+ g=nrow(df)
+  q=sum(gamma)
+  X1=X[,c(T,gamma)]
+ if(q==0){return(q/2*log(g+1) -n/2*log(t(y)%*%y))}
+  m = -q/2*log(g+1) -n/2*log(t(y)%*%y - g/(g+1)* t(y)%*% X1 %*%
+              solve(t(X1)%*%X1) %*%t(X1)%*%y)
+return(m)
+}
+
+
+
+choix_modele_bayes=function(df){
+#algorithme de Gibbs:on veut construire une chaine de Markov stationnaire dont la loi stationnaire suit la loi voulue
+
+
+niter=1e4 # nombre d'iterations
+k=ncol(df[,7:ncol(df)])
+print(k)
+gamma=matrix(F,nrow=niter,ncol=k)
+gamma0=sample(c(T,F),size=k, replace=TRUE) #valeur initiale aleatoire
+lkd=rep(0,niter)
+modelnumber=rep(0,niter)
+
+oldgamma=gamma0
+for(i in 1:niter){
+  newgamma=oldgamma
+  for(j in 1:k){
+    g1=newgamma; g1[j]=TRUE
+    g2=newgamma; g2[j]=FALSE
+    ml1=marglkd(df,g1)
+    ml2=marglkd(df,g2)
+    p=c(ml1,ml2)-min(ml1,ml2)
+    # On souhaite tirer depuis une Bernoulli, avec probabilite de tirer TRUE egale a exp(p[1])/(exp(p[1])+exp(p[2])).
+    # C'est ce que fait la ligne suivante. Notons que la fonction sample() calcule la constante de normalisation.
+    newgamma[j]=sample(c(T,F), size=1, prob=exp(p)) 
+  }
+  gamma[i,]=newgamma
+  lkd[i]=marglkd(df,newgamma)
+  modelnumber[i]=sum(newgamma*2^(0:(k-1)))
+  oldgamma=newgamma
+}
+
+apply(gamma, 2, "mean")
+
+# Verifications le melange de la chaine de Markov a l'aide des autocorrelations.
+par(mfrow=c(4,2))
+par(mar = rep(2, 4))
+for(i in 1:17) acf(as.numeric(gamma[,i]))# a adapter
+
+
+# Verifications la convergence + le melange a l'aide de la trace,ie valeur prise a chaque iteration (on utilise une moyenne glissante puisque les valeurs sont binaires).
+
+for(i in 2:k) plot(rollapply(gamma[,i], width=100, FUN=mean), type="l")
+
+burnin=500 # 500 iterations de burn-in
+gammab=modelnumber[(burnin+1):niter] 
+res=as.data.frame(table(gammab))
+odo=order(res$Freq, decreasing=T)[1:50]
+modcho=res$gammab[odo]
+probtop50=res$Freq[odo]/(niter-burnin)
+
+indices=match(modcho,modelnumber)
+resultat=cbind(probtop50,gamma[indices,])
+print(resultat)
+cat("freqeuence apparition covariable :",colMeans(resultat[,-c(1)]))
+
+}
+
+
+
+
+```
+
+
+```{r}
+reg_lin_bayes(data)
+
+```
+
+> Comparaison au cas frequentiste : 
+
+```{r}
+
+modele_complet=lm(data$Barre~.,data=data[,6:ncol(data)])
+ncol(data)
+summary(modele_complet)
+
+```
+
+On remarque que quand g tend vers le nombre d'observations, les esperances des coefficients de regressions bayesiens convergent vers les coefficients de regressions de la méthode frequentiste (obtenus par optimisation du maximum de vraisemblance,ou de maniere equivalente, minimisation des moindres carrés) et la variance de l'estimateur diminue
+
+
+
+
+```{r}
+
+choix_modele_bayes(data)
+
+```
+On peut voir que l'autocorrelation decroit rapidement et que la chaîne de Markov explore bien toute la loi : l'algorithme de Gibbs semble avoir donc converge
+
+
+Resultat du choix de modele bayesien toutes matieres confondues : c'est un modele avec uneuiqment lala covariable 15 ("taux_acces_attendu_premiere _bac") qui arrive en premier avec un probabilité d'environ 12,6%
+
+> Comparaison au choix de modele frequentiste: 
+
+```{r}
+modele=step(lm(data$Barre~.,data=data[,6:ncol(data)]))
+summary(modele)
+```
+
+resultat choix de modele frequentiste : 2 covariables sont retenues : "taux_reussite_ attendu_serie_l" et "taux_acces_attendu_premiere_bac"
+
+Le choix de modele frequientiste differe donc du choix de modele bayesien, même si on retrouve la covariable "taux_acces_attendu_premiere_bac" dans les 2 cas.
+
+
+*3) Etude des matières Mathematiques et Anglais*
+
+```{r}
+data_maths=data[data$Matiere=="MATHS",]
+data_anglais=data[data$Matiere=="ANGLAIS",]
+data_maths_anglais=data[data$Matiere=="ANGLAIS" | data$Matiere=="MATHS" ,]
+```
+
+
+
+```{r}
+reg_lin_bayes(data_maths)
+
+```
+
+```{r}
+
+modele_complet_maths=lm(Barre~.,data=data_maths[,6:ncol(data_maths)])
+#ncol(data_maths)
+summary(modele_complet_maths)
+
+```
+
+Interpretation des coefficients :
+Verification algo converge
+
+```{r}
+choix_modele_bayes(data_maths)
+
+```
+
+L'autocorrelogramme decroit vers 0 et la chaîne explore toute la loi.
+
+Resultat du choix de modele bayesien pour les maths : un modele avec uniquement la covariable 5 ("taux_brut_de_reussite_series_es") et une probabilité de 2.8%
+
+
+
+```{r}
+modele_maths=step(lm(Barre~.,data=data_maths[,6:ncol(data_maths)]))
+summary(modele_maths)
+
+
+```
+
+resultat choix de modele frequentiste pour les maths : bien plus de covariables retenues
+
+effectif_presents_serie_s 
+taux_brut_de_reussite_serie_l
+taux_reussite_attendu_serie_es
+effectif_de_seconde
+effectif_de_premiere
+taux_acces_brut_seconde_bac
+
+
+
+
+
+
+```{r}
+reg_lin_bayes(data_anglais)
+
+```
+
+
+```{r}
+
+
+modele_complet_anglais=lm(Barre~.,data=data_anglais[,6:ncol(data_anglais)])
+ncol(data_anglais)
+summary(modele_complet_anglais)
+
+```
+
+
+
+```{r}
+choix_modele_bayes(data_anglais)
+
+```
+L'autocorrelogramme decroit vers 0 et la chaîne explore toute la loi.
+
+Resultat du choix de modele bayesien pour l'anglais :covariables 5 ("taux_brut_de_reussite_series_es") et 7 ("taux_reussite_attendu_serie_l") avec une probabilite de 1%
+
+
+
+```{r}
+modele_anglais=step(lm(Barre~.,data=data_anglais[,6:ncol(data_anglais)]))
+summary(modele_anglais)
+
+
+
+```
+
+resultat choix de modele frequentiste : bien plus de covariables retenues
+
+effectif_presents_serie_l  
+taux_brut_de_reussite_serie_l 
+taux_reussite_attendu_serie_es
+taux_reussite_attendu_serie_s
+taux_acces_attendu_seconde_bac
+taux_acces_brut_premiere_bac
+taux_acces_attendu_premiere_bac
+taux_brut_de_reussite_total_series
+taux_reussite_attendu_total_series
+
+En conclusion dans tous ces cas le choix de modele entre bayesien et frequentistes sont differents. L'avantage du choix de modele bayesien et que nous disposons de la probabilité du modele, et on peut donc faire un "melange de modeles", ie une regression pondérée par la probabilité du choix de modele.
+
+> Influence des covariables sur les 2 matieres : 
+
+
+Intuitivement on peut penser que les covariables n'ont pas la même influence et que par exemple les professeurs de maths seront plus attentifs aux filieres s et es et moins a la filiere l, alors que les profs d'anglais seront plus sensibles a la filiere litteraire.
+D'autre part le resultat du choix de modele Bayesien n'est pas le même pour ces 2 matieres.
+
+Pour le verifier, il suffit de regarder la frequence d'apparitition de la covariable taux_reussite_attendu_serie_l :
+
+frequences apparitions pour les maths:  0.06 0.06 0.1 0.46 0.62 0.06 0.04 0.06 0.06 0.04 0.08 0.06 0.04 0.18 0.14 0.12 0.08
+
+frequences apparitions pour l'anglais: 0.06 0.04 0.04 0.08 0.62 0.04 0.22 0.06 0.18 0.04 0.08 0.1 0.04 0.06 0.18 0.06 0.08
+
+On voit que les 2 frequences d'apparitions sont differentes pour certaines covariables
+
+D'autre part on dipose deja de la fonction log vraisemblance marginale, on peut donc comparer les 2 modèles suivants part calcul du facteur de Bayes :
+Hypothese 1) : les covariables agissent de la même manière sur anglais et maths(Y=$\beta_0$ + $\beta_1$ X1 + ...)
+Hypothese 2) : on a deux modèles différents (Y=$\beta'_0$ + $\beta'_1$X1 + ... pour l'anglais et Y=$\beta''_0$ + $\beta''_1$ X1 + ... pour les maths) 
+
+```{r}
+choix_modele_bayes(data_maths_anglais)
+
+```
+
+```{r}
+
+#meilleur modele maths_anglais: 0 0 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0
+gamma_maths_anglais=c(F,F,F,T,T,F,F,F,F,F,F,F,F,F,F,F,F)
+
+
+
+#meilleur modele  laths: 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0
+gamma_maths=c(F,F,F,F,T,F,F,F,F,F,F,F,F,F,F,F,F)
+
+
+
+
+
+#meilleur modele anglais: 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0
+
+gamma_anglais=c(F,F,F,F,T,F,T,F,F,F,F,F,F,F,F,F,F)
+
+#log marginal likelyhood hypothese un modele unique pour les 2 matieres
+m1=marglkd(data_maths_anglais,gamma_maths_anglais)
+
+
+#log marginal likelyhood hypothese 2 modeles differents
+m21=marglkd(data_maths,gamma_maths) 
+m22=marglkd(data_anglais,gamma_anglais)
+
+#cat(m1,m21,m22)
+#facteur de Bayes
+#cat(exp(m1))
+
+
+
+
+BF=exp(m1-m21-m22)
+print(BF)
+
+print(log10(BF))#-24 <-2 : l'hypothese 2 est décisive
+
+
+
+```
+
+En conclusion il est fort plausible que les covariables n'agissent pas de la même maniere sur les 2 disciplines,ce qui est conforme a notre intuition initiale
+
+#####II)Loi de Pareto
+
+
+*4)Generation de Pareto*
+
+```{r}
+library(EnvStats)
+?rpareto
+
+n=1e4
+m=21
+alpha=c(0.1,1,5,10,50,100)
+
+par(mfrow=c(3,3))
+
+for (j in 1:length(alpha)){
+curve(dpareto(x,shape = alpha[j],location=m),xlim=c(0,50))
+}
+  
+#quand alpha tends vers l'infini, la loi de Pareto converge vers une Dirac en m  
+```
+
+*5)Loi a priori pour alpha*
+
+On va choisir une loi a priori gamma(a,b) pour $\alpha$. En effet on aura alors une loi a posteriori conjuguée (pour le voir, l'astuce consiste à reecrire la loi de Pareto : (m/z)^alpha = exp(alpha*(ln(m/z))) 
+
+
+*6)Loi a posteriori pour alpha*
+Soit n les nombre d'observations, et zi la valeur de Barre pour l'observation i
+La loi a posteriori est alors $\Gamma(a+n,b+\sum ln(zi)-n*ln(m))$
+
+
+```{r}
+a=2
+b=2
+n=nrow(data)
+
+curve(dgamma(x,a+n,b+sum(log(data$Barre))-n*log(m)), xlim=c(0,3), main="Posterior model", ylab="density")
+
+#esperance
+print((a+n)/(b+sum(log(data$Barre))-n*log(m)))
+
+#interval de credibilite a 95 %
+qgamma(c(.025, .975), a+n, b+sum(log(data$Barre))-n*log(m))
+
+```
+
+*7)Loi a posteriori pour alpha - mathématiques et anglais*
+
+> mathématiques 
+
+```{r}
+a=2
+b=2
+n=nrow(data_maths)
+
+curve(dgamma(x,a+n,b+sum(log(data_maths$Barre))-n*log(m)), xlim=c(0,3), main="Posterior model", ylab="density")
+
+#esperance
+print((a+n)/(b+sum(log(data_maths$Barre))-n*log(m)))
+
+#interval de credibilite a 95 %
+qgamma(c(.025, .975), a+n, b+sum(log(data_maths$Barre))-n*log(m))
+
+
+
+
+
+```
+
+
+> anglais 
+
+```{r}
+a=2
+b=2
+n=nrow(data_anglais)
+
+curve(dgamma(x,a+n,b+sum(log(data_anglais$Barre))-n*log(m)), xlim=c(0,3), main="Posterior model", ylab="density")
+
+#esperance
+print((a+n)/(b+sum(log(data_anglais$Barre))-n*log(m)))
+
+#interval de credibilite a 95 %
+qgamma(c(.025, .975), a+n, b+sum(log(data_anglais$Barre))-n*log(m))
+
+
+```
+
+*8) Test bayesien de l'hypothese sur * $\alpha$
+
+On va estimer un facteur de Bayes par la méthode de Monte-Carlo pour tester l'hypothese
+
+$\alpha_{maths}=\alpha_{anglais}$
+
+```{r}
+
+#Q5: Monte Carlo standard
+# Fonctions pour la vraisemblance
+lkd.model1=function(log_z,n,alpha,m){
+  #return(exp(-n*lambda+y*log(lambda)))
+return(exp(n*(log(alpha)+alpha*log(m))-(alpha)*log_z)) 
+  }
+
+lkd.model2=function(log_z1,n1,log_z2,n2,alpha1,alpha2,m){
+  return(exp(n1*(log(alpha1)+alpha1*log(m))-(alpha1)*log_z1
+             +n2*(log(alpha2)+alpha2*log(m))-(alpha2)*log_z2))
+  #return(lambda1^y1*exp(-n1*lambda1)*lambda2^y2*exp(-n2*lambda2))
+}
+
+```
+
+**Remarque : normalement dans la vraisemblance, c'est (alpha+1)*log_z au lieu de (alpha+1)*log_z cependant le "+1" se neutralise dans le facteur de Bayes**
+
+```{r}
+BF_MC=function(a,b,log_z1,n1,log_z2,n2,M,m,log_z){
+  alpha1=rgamma(M,a,b)
+  
+  m1=cumsum(lkd.model1((log_z),(n1+n2),alpha1,m))/(1:M)
+  alpha2.1=rgamma(M,a,b)
+  alpha2.2=rgamma(M,a,b)
+  m2=cumsum(lkd.model2(log_z1,n1,log_z2,n2,alpha2.1,alpha2.2,m))/(1:M)
+  return(m2/m1)
+
+  }
+
+M=1e7
+m=21
+a=2 
+b=2 
+
+log_z=sum(log(data_maths_anglais$Barre))
+log_z1=sum(log(data_maths$Barre))
+n1=nrow(data_maths) 
+log_z2=sum(log(data_anglais$Barre)) 
+n2=nrow(data_anglais)
+
+resMC=BF_MC(a,b,log_z1,n1,log_z2,n2,M,m,log_z)
+resMC[M]
+resMC[1000:1100]
+plot(100:M,resMC[100:M], type="l")
+#abline(h=trueBF, col=2)
+
+log10(resMC[M])#-0.75
+
+abline(h=resMC[M],col="red")
+
+```
+
+
+Le log base 10 du facteur de Bayes obtenu est -0.75: ceci est sur l'echelle de Jeffreys substantiel en faveur du dénominateur "m1" ie $\alpha_{maths}$ = $\alpha_{anglais}$.Ceci est coherent avec les intervalles de credibilite trouvés à la question precedente.
+
+
+##Importance sampling
+
+Soit n les nombre d'observations, et zi la valeur de Barre pour l'observation i
+La loi a posteriori est alors
+$\Gamma(a+n,b+\sum ln(zi)-n*ln(m))$
+
+
+```{r}
+
+BF_IS=function(a,b,log_z1,n1,log_z2,n2,M,m,log_z){
+#BF_IS=function(a,b,y1,n1,y2,n2,M)
+  
+  #mean1=(a+y1+y2)/(b+n1+n2)
+  #mean2.1=(a+y1)/(b+n1)
+  #mean2.2=(a+y2)/(b+n2)
+  
+  
+  mean1=(a+n1+n2)/(b+log_z-(n1+n2)*log(m))
+  
+  mean2.1=(a+n1)/(b+log_z1-n1*log(m))
+  mean2.2=(a+n2)/(b+log_z2-n2*log(m))
+  
+  
+  
+  #sigma1=sqrt((a+y1+y2)/(b+n1+n2)^2)
+  #sigma2.1=sqrt((a+y1)/(b+n1)^2)
+  #sigma2.2=sqrt((a+y2)/(b+n2)^2)
+  
+  
+  sigma1=sqrt((a+n1+n2)/(b+log_z-(n1+n2)*log(m))^2)
+  sigma2.1=sqrt((a+n1)/(b+log_z1-n1*log(m))^2)
+  sigma2.2=sqrt((a+n2)/(b+log_z2-n2*log(m))^2)
+  
+  
+  #lambda1=rnorm(M,mean1,sigma1)
+  alpha1=rnorm(M,mean1,sigma1)
+  
+  
+  #lkd.model1((log_z),(n1+n2),alpha1,m)
+  #lkd.model1(y1+y2,n1+n2,lambda1)
+  
+  m1=cumsum( lkd.model1((log_z),(n1+n2),alpha1,m) * 
+               dgamma(alpha1,a, b) / dnorm(alpha1,mean1,sigma1))/(1:M)
+  
+  alpha2.1=rnorm(M,mean2.1, sigma2.1)
+  alpha2.2=rnorm(M,mean2.2, sigma2.2)
+  
+  m2=cumsum( lkd.model2(log_z1,n1,log_z2,n2,alpha2.1,alpha2.2,m) * 
+               dgamma(alpha2.1,a, b) * dgamma(alpha2.2,a,b) / 
+               (dnorm(alpha2.1,mean2.1,sigma2.1) * 
+                  dnorm(alpha2.2,mean2.2,sigma2.2))) / (1:M)
+  
+  return(m2/m1)
+}
+
+#resIS=BF_IS(2,2,qh,nh,qf,nf,M)
+
+
+
+M=1e7
+m=21
+a=2 
+b=2 
+
+log_z=sum(log(data_maths_anglais$Barre))
+log_z1=sum(log(data_maths$Barre))
+n1=nrow(data_maths) 
+log_z2=sum(log(data_anglais$Barre)) 
+n2=nrow(data_anglais)
+
+resIS=BF_IS(a,b,log_z1,n1,log_z2,n2,M,m,log_z)
+
+resIS[M]
+log10(resMC[M])#on retrouve le meme facteur de Bayes
+plot(100:M,resIS[100:M], type="l")
+abline(h=resIS[M], col=2)
+
+```
+
+On retrouve le même resultat que precedemment avec une meilleure precision.
+
+
+
+
+
+
+#####III) Loi de Pareto Generalisee
+
+*9)Choix de la loi a priori pour \tau*
+
+Apparement difficile d'obtenir une loi conjuguée ici, $\tau$ étant un reel positif,on peut choisir une loi gamma pour $\tau$
+
+```{r}
+
+a=1
+b=1
+c=10#3
+d=10#3
+
+?dgamma
+prior=function(beta){
+  return(dgamma(beta[1], a,scale = b)*dgamma(beta[2], c, d))
+}#beta correspond au vecteur (alpha,tau)
+
+
+logprior=function(beta){
+  return(dgamma(beta[1], a, b, log=T) + dgamma(beta[2],c,d,log = T))
+}
+```
+
+*10)Loi a prosteriori*
+
+$\tau$ et $\alpha$ étant indépendantes, la loi a posteriori devient ne ressemble pas à une loi connue : on va avoir du mal à travailler avec directement
+
+*11)Echantillon de la loi a posteriori*
+On utilise un algorithme de Metropolis-Hastings
+
+```{r}
+
+
+
+# loi a posteriori
+posterior=function(beta, t){
+  
+  #p=pnorm(beta[1]+x*beta[2])
+  #lkd=prod(p^y)*prod((1-p)^(1-y))
+  
+  lkd=((beta[1]/(m*beta[2]))^nrow(data))*prod((1+(t-m)/(beta[2]*m))^(-(beta[1]+1)))
+  return(lkd*prior(beta))
+}
+
+
+logposterior=function(beta,t){
+  
+  #p=pnorm(beta[1]+x*beta[2])
+  
+  #loglkd=sum(y*log(p)) + sum((1-y)*log(1-p))
+  
+  loglkd=nrow(data)*log(beta[1]/(m*beta[2]))+(-(beta[1]+1))*sum(log(1+(t-m)/(beta[2]*m)))
+   #print(nrow(data)*log(beta[1]/(m*beta[2])))
+  if(!is.finite(loglkd)) return(-Inf)
+  
+  return(loglkd+logprior(beta))
+}
+
+t0=data$Barre
+
+beta_0=c(0.5,1)
+
+logposterior(beta_0,t0)
+
+#print(rbind(c(1,0),c(0,1)))
+#rm(beta0)
+
+```
+
+
+
+
+```{r}
+# algorithme de Metropolis-Hastings
+
+require(mvtnorm)
+MH=function(beta0, niter, sigma,t){
+  beta=matrix(NA, nrow=niter, ncol=2)
+  beta[1,]=beta0
+  acc=0 # nombre d'acceptations
+  
+  Id=rbind(c(1,0),c(0,1))
+  
+  for(i in 2:niter){
+    proposal=rmvnorm(1, beta[i-1,], sigma^2*Id)
+    #print(proposal)
+    #print(logposterior(proposal, t))
+    #print(logposterior(beta[i-1,], t))
+    logalpha=logposterior(proposal, t)-logposterior(beta[i-1,], t)
+    #print(logalpha)
+    if(log(runif(1))<logalpha){
+      beta[i,]=proposal
+      acc=acc+1
+    }
+    else{
+      beta[i,]=beta[i-1,]
+    }
+  }
+  print(acc/niter) #proportion d'acceptations
+  return(beta)
+}
+
+niter=2e4
+b1=MH(c(1,5), niter, 0.24,data$Barre)
+b2=MH(c(1,5), niter, 0.23,data$Barre)
+#b3=MH(c(1,1), niter, 0.38,data$Barre)
+b3=MH(c(1,5), niter, 0.22,data$Barre)
+
+
+
+```
+
+
+```{r}
+
+#Etudions la sortie de l'algorithme
+
+#pour alpha :
+par(mfcol=c(3,3))
+i=1 
+# trace
+plot(b1[,i], type="l")
+
+
+plot(b2[,i], type="l")
+plot(b3[,i], type="l")
+
+# autocorrelations
+acf(b1[100:niter,i],lag.max = 300)
+acf(b2[100:niter,i],lag.max = 300)
+acf(b3[100:niter,i],lag.max = 300)
+
+# histogrammes
+hist(b1[100:niter,i], breaks=50,lag.max = 300)
+hist(b2[100:niter,i], breaks=50,lag.max = 300)
+hist(b3[100:niter,i], breaks=50,lag.max = 300)
+```
+
+```{r}
+
+#Etudions la sortie de l'algorithme
+
+#pour tau :
+par(mfcol=c(3,3))
+i=2 
+# trace
+plot(b1[,i], type="l")
+plot(b2[,i], type="l")
+plot(b3[,i], type="l")
+
+# autocorrÃ©lations
+acf(b1[100:niter,i],lag.max = 300)
+acf(b2[100:niter,i],lag.max = 300)
+acf(b3[100:niter,i],lag.max = 300)
+
+# histogrammes
+hist(b1[100:niter,i], breaks=50,lag.max = 300)
+hist(b2[100:niter,i], breaks=50,lag.max = 300)
+hist(b3[100:niter,i], breaks=50,lag.max = 300)
+```
+
+Interpretation : nous avons dans ces 3 simulations des chaines de Markov qui explorent bien toutes les lois, des autocorrelations qui decroissent vite vers 0 et des taux d'acceptation proches de 0.234 (conformement à la loi de RObert,Gelman et Gilks) : l'algorithme de Metropolis-Hastings a bien fonctionne.
+
+
+Remarque : il semblerait que les parametres a , b,c et d des lois à priori aient une influence sur les valeurs prises par alpha et tau, ainsi que la variance a posteriori..
+
+```{r}
+
+# Effective Sample Size
+niter/(2*sum(acf(b1[100:niter,1], plot=F)$acf)-1)
+niter/(2*sum(acf(b2[100:niter,1], plot=F)$acf)-1)
+niter/(2*sum(acf(b3[100:niter,1], plot=F)$acf)-1)
+
+#Esperance et Variance de alpha et tau
+
+colMeans(b1[100:niter,])
+var(b1[100:niter,])
+
+
+
+```
+Les variances sont plutot faibles.
+
+
+*12)Hypothese sur * $\tau$
+
+Au vu de l'esperance a posteriori de $\tau$,et de la variance, il est peu  probable que $\tau$ prenne la valeur 1.
+
+Question  : ce modele(tau,alpha) est il meilleur que celui de la question precedente (tau=1,alpha environ égal à 0.5) ?
+On peut penser que comme dans le modele precedent on avait fixé le paramètre $\tau$ à 1, et qu'ici nous avons 2 degrés de liberté, il est fort plausible que le modele de Pareto generalise generé avec l'algorithme de Metropolis-Hastings avec $\alpha$, $\tau$ ayant des esperances de respectivement environ 1.1 et 6.9 soit meilleur que le modele avec $\tau$=1
+
+Pour le verifier on pourrait calculer un nouveau facteur de Bayes (que je n'arrive pas a calculersur R) entre le modele de la partie 2 et le modele Pareto generalise.
+
